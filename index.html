@@ -726,6 +726,7 @@ fbq('init', '1319002526469458');
    <div class="tracks" id="tracks"></div>
    <div class="wave" id="wave" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
    <div class="ptime"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+   <p id="audioError" role="alert" aria-live="polite" hidden style="color:#F8CA75;font-size:13px;margin:10px 0 4px;line-height:1.5"></p>
    <div class="morecta"><p data-i18n-html="moreText">Ces 6 extraits + <b>244 autres sons</b> vous attendent dans le pack.</p><a href="https://halloweenmusics.mychariow.co/prd_wdu2hqpk" target="_blank" rel="noopener" class="btn primary small buy" data-i18n="moreCTA">Tout obtenir · 10 $ ↗</a></div>
    </div>
   </div>
@@ -903,7 +904,7 @@ async function bytesFor(id){const el=document.getElementById('a-'+id);
  try{const r=await fetch('audio/'+id+'.mp3');if(!r.ok)throw 0;return await r.arrayBuffer()}catch(e){return null}}
 const BUF={};
 function loadBuf(id){if(!BUF[id])BUF[id]=bytesFor(id).then(ab=>ab?decode(ab):null);return BUF[id]}
-function srcUrl(id){const el=document.getElementById('a-'+id);return el?'data:audio/mpeg;base64,'+el.textContent.trim():'audio/'+id+'.mp3'}
+function srcUrl(id){const el=document.getElementById('a-'+id);return el?'data:audio/mpeg;base64,'+el.textContent.trim():'/audio/'+id+'.mp3'}
 
 /* background music (preloaded streaming; same original MP3 and seamless loop) */
 const bgAudio=$('#bgAudio');let bgFallback=false,bgFadeRaf=0;
@@ -926,7 +927,7 @@ function unduck(){if(demoPaused){clearTimeout(resumeT);resumeT=setTimeout(()=>{d
 function setSnd(){const b=$('#snd');b.classList.toggle('on',musicOn);b.setAttribute('aria-pressed',String(musicOn));b.setAttribute('aria-label',copy[lang][musicOn?'sndOn':'sndOff'])}
 function enterSite(){musicOn=true;const ctx=ensureCtx();
  if(ctx){ctx.resume();try{const s=ctx.createBufferSource();s.buffer=ctx.createBuffer(1,1,22050);s.connect(ctx.destination);s.start(0)}catch(e){}}
- bgPlay();setSnd();countHero();setTimeout(()=>loadBuf('m1'),1500)}
+ bgPlay();setSnd();countHero();void 0 /* demo files are streamed when visitors press Play */}
 $('#gateBtn').addEventListener('click',enterSite);
 $('#snd').addEventListener('click',()=>{musicOn=!musicOn;if(musicOn){const c=ensureCtx();if(c)c.resume();if(!cur.playing){demoPaused=false;bgPlay()}}else{clearTimeout(resumeT);bgPause(0)}setSnd()});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){bgPause(0);if(cur.playing)stopTrack()}else{if(audioContext&&musicOn)audioContext.resume();bgPlay()}});
@@ -951,15 +952,63 @@ function updNow(){const c=copy[lang];if(cur.i>=0&&cur.cat){$('#nowTitle').textCo
 function killSrc(){if(cur.src){const s=cur.src,g=cur.g,t=audioContext.currentTime;cur.src=null;s.onended=null;g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(Math.max(g.gain.value,.0001),t);g.gain.linearRampToValueAtTime(.0001,t+.12);try{s.stop(t+.14)}catch(e){}}if(cur.el){cur.el.onended=null;cur.el.pause();cur.el=null}}
 function startAt(off){const ctx=audioContext,src=ctx.createBufferSource(),g=ctx.createGain(),t=ctx.currentTime;src.buffer=cur.buf;g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(1,t+.08);src.connect(g);g.connect(analyser);src.start(0,off);cur.src=src;cur.g=g;cur.t0=t-off;src.onended=()=>{if(cur.src===src)stopTrack()}}
 function pos(){if(cur.el)return cur.el.currentTime||0;if(cur.src)return audioContext.currentTime-cur.t0;return 0}
-async function playTrack(i,cat){cat=cat||category;
- if(cur.playing&&cur.cat===cat&&cur.i===i){stopTrack();return}
- stopTrack(true);const ctx=ensureCtx();if(!ctx)return;ctx.resume();duck();
- const tok=++cur.token,t=TR[cat][i];Object.assign(cur,{cat,i,id:t.id,buf:null,dur:PEAKS[t.id].d,playing:false});
- showPeaks(t.id);markUI(true);
- const buf=await loadBuf(t.id);if(tok!==cur.token)return;
- if(buf){cur.buf=buf;cur.dur=buf.duration;startAt(0)}
- else{const el=new Audio(srcUrl(t.id));cur.el=el;el.onended=()=>stopTrack();try{await el.play()}catch(e){}if(tok!==cur.token)return}
- cur.playing=true;markUI();loopUI()}
+/* Native HTML5 MP3 streaming: start on the actual tap, without fetching/decoding the entire file. */
+function demoErrorMessage(reason){
+ const errorBox=$('#audioError');
+ errorBox.hidden=false;
+ errorBox.textContent=lang==='fr'
+  ? ('Impossible de lire cet extrait. Vérifiez que le fichier MP3 existe dans /audio/. '+(reason||''))
+  : ('This preview cannot play. Check that its MP3 file exists in /audio/. '+(reason||''));
+}
+function playTrack(i,cat){
+ cat=cat||category;
+ const track=TR[cat]&&TR[cat][i];
+ if(!track)return Promise.resolve();
+ if(cur.cat===cat&&cur.i===i&&(cur.playing||cur.el)){
+  stopTrack();return Promise.resolve();
+ }
+ stopTrack(true);
+ $('#audioError').hidden=true;
+ const token=++cur.token;
+ Object.assign(cur,{cat,i,id:track.id,buf:null,dur:PEAKS[track.id].d,playing:false});
+ showPeaks(track.id);markUI(true);duck();
+ const el=new Audio();
+ el.preload='auto';
+ el.volume=1;
+ el.src=srcUrl(track.id);
+ cur.el=el;
+ el.addEventListener('loadedmetadata',()=>{
+  if(token!==cur.token)return;
+  if(Number.isFinite(el.duration)){
+   cur.dur=el.duration;
+   $('#tDur').textContent=fmt(cur.dur);
+  }
+ });
+ el.addEventListener('ended',()=>{
+  if(token===cur.token)stopTrack();
+ });
+ const fail=(why)=>{
+  if(token!==cur.token)return;
+  stopTrack();
+  demoErrorMessage(why||'');
+ };
+ el.addEventListener('error',()=>fail('(MP3 missing or invalid)'));
+ // play() is deliberately called synchronously in the user click handler.
+ // Awaiting fetch/decode before calling play() loses the gesture on mobile Chrome/Safari.
+ try{
+  const promise=el.play();
+  if(promise&&promise.then){
+   return promise.then(()=>{
+    if(token!==cur.token)return;
+    cur.playing=true;markUI();loopUI();
+   }).catch(err=>{
+    fail(err&&err.name==='NotAllowedError'?'(browser blocked audio)': '(audio file unavailable)');
+   });
+  }
+  cur.playing=true;markUI();loopUI();
+ }catch(err){fail('(browser cannot start audio)')}
+ return Promise.resolve();
+}
 function stopTrack(silent){cur.token++;killSrc();cur.playing=false;cancelAnimationFrame(raf2);raf2=null;
  $('#vinylbox').style.setProperty('--lvl',0);wave.style.setProperty('--lvl',0);
  cur.i=-1;markUI();setProgress(0);bars.forEach(b=>b.classList.remove('head'));$('#tCur').textContent='0:00';if(!silent)unduck()}
