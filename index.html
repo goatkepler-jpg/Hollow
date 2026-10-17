@@ -901,10 +901,10 @@ function ensureCtx(){const AC=window.AudioContext||window.webkitAudioContext;if(
 function decode(ab){const ctx=ensureCtx();return new Promise(res=>{try{const p=ctx.decodeAudioData(ab,res,()=>res(null));if(p&&p.catch)p.catch(()=>res(null))}catch(e){res(null)}})}
 async function bytesFor(id){const el=document.getElementById('a-'+id);
  if(el){const b=el.textContent.trim();try{return await (await fetch('data:audio/mpeg;base64,'+b)).arrayBuffer()}catch(e){const bin=atob(b),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u.buffer}}
- try{const r=await fetch('audio/'+id+'.mp3');if(!r.ok)throw 0;return await r.arrayBuffer()}catch(e){return null}}
+ try{const r=await fetch(srcUrl(id));if(!r.ok)throw 0;return await r.arrayBuffer()}catch(e){return null}}
 const BUF={};
 function loadBuf(id){if(!BUF[id])BUF[id]=bytesFor(id).then(ab=>ab?decode(ab):null);return BUF[id]}
-function srcUrl(id){const el=document.getElementById('a-'+id);return el?'data:audio/mpeg;base64,'+el.textContent.trim():'/audio/'+id+'.mp3'}
+function srcUrl(id){return new URL('/'+id+'.mp3', window.location.origin).href}
 
 /* background music (preloaded streaming; same original MP3 and seamless loop) */
 const bgAudio=$('#bgAudio');let bgFallback=false,bgFadeRaf=0;
@@ -918,7 +918,7 @@ function bgPause(fade){bgCancelFade();if(bgAudio.paused)return;
  function step(t){const progress=Math.min(1,(t-begin)/duration);bgAudio.volume=initial*(1-progress);
   if(progress<1){bgFadeRaf=requestAnimationFrame(step)}else{bgFadeRaf=0;bgAudio.pause()}}
  bgFadeRaf=requestAnimationFrame(step)}
-/* A standalone HTML file also works: fall back to the MP3 already embedded below. */
+/* Background fallback to /bg.mp3 when the primary audio cannot load. */
 bgAudio.addEventListener('error',()=>{if(bgFallback)return;bgFallback=true;bgAudio.src=srcUrl('bg');bgAudio.load();if(musicOn&&!demoPaused)bgPlay()});
 /* Start downloading before visitors press Enter (no full-file WebAudio decoding). */
 bgAudio.load();
@@ -957,8 +957,8 @@ function demoErrorMessage(reason){
  const errorBox=$('#audioError');
  errorBox.hidden=false;
  errorBox.textContent=lang==='fr'
-  ? ('Impossible de lire cet extrait. Vérifiez que le fichier MP3 existe dans /audio/. '+(reason||''))
-  : ('This preview cannot play. Check that its MP3 file exists in /audio/. '+(reason||''));
+  ? ('Impossible de lire cet extrait. '+(reason||''))
+  : ('This preview cannot play. '+(reason||''));
 }
 function playTrack(i,cat){
  cat=cat||category;
@@ -992,7 +992,7 @@ function playTrack(i,cat){
   stopTrack();
   demoErrorMessage(why||'');
  };
- el.addEventListener('error',()=>fail('(MP3 missing or invalid)'));
+ el.addEventListener('error',()=>fail('('+track.id+'.mp3 — unable to load audio, media code '+(el.error?.code ?? '?')+')'));
  // play() is deliberately called synchronously in the user click handler.
  // Awaiting fetch/decode before calling play() loses the gesture on mobile Chrome/Safari.
  try{
@@ -1002,7 +1002,7 @@ function playTrack(i,cat){
     if(token!==cur.token)return;
     cur.playing=true;markUI();loopUI();
    }).catch(err=>{
-    fail(err&&err.name==='NotAllowedError'?'(browser blocked audio)': '(audio file unavailable)');
+    fail(err&&err.name==='NotAllowedError'?'(browser blocked audio)': '(audio request failed or browser cannot decode the MP3)');
    });
   }
   cur.playing=true;markUI();loopUI();
@@ -1133,13 +1133,13 @@ cd();setInterval(cd,1000);
 
 translate('en');
 </script>
-<!-- /audio/bg.mp3 -->
-<!-- /audio/m1.mp3 -->
-<!-- /audio/m2.mp3 -->
-<!-- /audio/m3.mp3 -->
-<!-- /audio/s1.mp3 -->
-<!-- /audio/s2.mp3 -->
-<!-- /audio/s3.mp3 -->
+<!-- Background MP3: /bg.mp3 -->
+<!-- Preview MP3: /m1.mp3 -->
+<!-- Preview MP3: /m2.mp3 -->
+<!-- Preview MP3: /m3.mp3 -->
+<!-- Preview MP3: /s1.mp3 -->
+<!-- Preview MP3: /s2.mp3 -->
+<!-- Preview MP3: /s3.mp3 -->
 
 </body>
 </html>
