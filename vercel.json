@@ -2,30 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "headers": [
     {
-      "source": "/audio/(.*)",
+      "source": "/(m1|m2|m3|s1|s2|s3|bg|nocturne-background).mp3",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=604800, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/nocturne-background.mp3",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=604800, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/(robots.txt|sitemap.xml)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=3600"
-        }
+        {"key": "Content-Type", "value": "audio/mpeg"},
+        {"key": "Cache-Control", "value": "public, max-age=86400"}
       ]
     }
   ]
